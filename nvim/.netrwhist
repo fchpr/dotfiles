@@ -1,0 +1,5 @@
+let g:netrw_dirhistmax  =10
+let g:netrw_dirhistcnt =3
+let g:netrw_dirhist_3='/home/fch/dev/branch/src'
+let g:netrw_dirhist_2='/home/fch/dev/branch/src/routes'
+let g:netrw_dirhist_1='/home/fch/dev/branch/src'
