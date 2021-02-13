@@ -1,84 +1,49 @@
-{
-  description = "A highly structured configuration database.";
+# https://www.tweag.io/blog/2020-07-31-nixos-flakes/
 
-  inputs =
-    {
-      # Once desired, bump master's locked revision:
-      # nix flake update --update-input master
-      master.url = "nixpkgs/master";
-      nixos.url = "nixpkgs/release-20.09";
-      home.url = "github:nix-community/home-manager/release-20.09";
-      home.inputs.nixpkgs.follows = "nixos";
-      flake-utils.url = "github:numtide/flake-utils/flatten-tree-system";
-      devshell.url = "github:numtide/devshell";
-      nixos-hardware.url = "github:nixos/nixos-hardware";
-      ci-agent.url = "github:hercules-ci/hercules-ci-agent";
-      ci-agent.inputs.nixos-20_09.follows = "nixos";
-      ci-agent.inputs.nixos-unstable.follows = "master";
+# To switch from channels to flakes execute:
+# cd /etc/nixos
+# sudo wget -O flake.nix https://gist.githubusercontent.com/misuzu/80af74212ba76d03f6a7a6f2e8ae1620/raw/flake.nix
+# sudo sed -i "s/nix/$(hostname)/g" flake.nix
+# sudo git init
+# sudo git add . # won't work without this
+# nix run nixpkgs.nixFlakes -c sudo nix --experimental-features 'flakes nix-command' build .#nixosConfigurations.$(hostname).config.system.build.toplevel
+# sudo ./result/bin/switch-to-configuration switch
+
+# Now nixos-rebuild can use flakes:
+# sudo nixos-rebuild switch --flake /etc/nixos
+
+# To update flake.lock run:
+# sudo nix flake update --recreate-lock-file --commit-lock-file /etc/nixos
+
+{
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+  inputs.home-manager.url = "github:nix-community/home-manager/master";
+  inputs.home-manager.inputs.nixpkgs.follows = "/nixpkgs";
+
+  outputs = inputs: {
+
+    nixosConfigurations.nix = inputs.nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      # Things in this set are passed to modules and accessible
+      # in the top-level arguments (e.g. `{ pkgs, lib, inputs, ... }:`).
+      specialArgs = {
+        inherit inputs;
+      };
+      modules = [
+        inputs.home-manager.nixosModules.home-manager
+
+        ({ pkgs, ... }: {
+          nix.extraOptions = "experimental-features = nix-command flakes";
+          nix.package = pkgs.nixFlakes;
+          nix.registry.nixpkgs.flake = inputs.nixpkgs;
+          
+          home-manager.useGlobalPkgs = true;
+        })
+
+        ./configuration.nix
+      ];
     };
 
-  outputs =
-    inputs@{ self
-    , ci-agent
-    , home
-    , nixos
-    , master
-    , flake-utils
-    , nur
-    , devshell
-    , nixos-hardware
-    }:
-    let
-      inherit (flake-utils.lib) eachDefaultSystem flattenTreeSystem;
-      inherit (nixos.lib) recursiveUpdate;
-      inherit (self.lib) overlays nixosModules genPackages genPkgs
-        genHomeActivationPackages;
-
-      extern = import ./extern { inherit inputs; };
-
-      pkgs' = genPkgs { inherit self; };
-
-      outputs =
-        let
-          system = "x86_64-linux";
-          pkgs = pkgs'.${system};
-        in
-        {
-          inherit nixosModules overlays;
-
-          nixosConfigurations =
-            import ./hosts (recursiveUpdate inputs {
-              inherit pkgs system extern;
-              inherit (pkgs) lib;
-            });
-
-          overlay = import ./pkgs;
-
-          lib = import ./lib { inherit nixos; };
-
-          templates.flk.path = ./.;
-
-          templates.flk.description = "flk template";
-
-          defaultTemplate = self.templates.flk;
-        };
-
-      systemOutputs = eachDefaultSystem (system:
-        let pkgs = pkgs'.${system}; in
-        {
-          packages = flattenTreeSystem system
-            (genPackages {
-              inherit self pkgs;
-            });
-
-          devShell = import ./shell {
-            inherit pkgs nixos;
-          };
-
-          legacyPackages.hmActivationPackages =
-            genHomeActivationPackages { inherit self; };
-        }
-      );
-    in
-    recursiveUpdate outputs systemOutputs;
+  };
 }
